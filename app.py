@@ -7,16 +7,14 @@ from datetime import datetime
 app = Flask(__name__)
 app.secret_key = "chave-secreta-simples"  # troque em produção ou use SECRET_KEY em variável de ambiente
 
-# Webhooks do Discord
-WEBHOOK_ENCOMENDAS = "https://discord.com/api/webhooks/1447371536582574193/gcX3hHxrt8JGDoyWHj4rtavNNnWF7cC5Hd_0drCtJ7j6fu_IJRiKFxCgtwpr7TekW_lf"
-WEBHOOK_VENDAS = "https://discord.com/api/webhooks/1447372762875297894/iUiNTCZU6DI5xzWabVjIBqn8d6wS9yh_L70skG8Kgemgt5SykiluR-YRmvk6iWU2wA-k"
-
 # ------------------ BANCO DE DADOS ------------------ #
 
 def get_db():
+    # usa arquivo orders.db no diretório atual
     conn = sqlite3.connect("orders.db")
     conn.row_factory = sqlite3.Row
     return conn
+
 
 def init_db():
     conn = get_db()
@@ -37,6 +35,15 @@ def init_db():
     conn.commit()
     conn.close()
 
+
+# roda init_db assim que o app é importado (funciona com gunicorn no Railway)
+with app.app_context():
+    init_db()
+
+# Webhooks do Discord
+WEBHOOK_ENCOMENDAS = "https://discord.com/api/webhooks/1447371536582574193/gcX3hHxrt8JGDoyWHj4rtavNNnWF7cC5Hd_0drCtJ7j6fu_IJRiKFxCgtwpr7TekW_lf"
+WEBHOOK_VENDAS = "https://discord.com/api/webhooks/1447372762875297894/iUiNTCZU6DI5xzWabVjIBqn8d6wS9yh_L70skG8Kgemgt5SykiluR-YRmvk6iWU2wA-k"
+
 # ------------------ FUNÇÕES AUXILIARES ------------------ #
 
 PRECOS = {
@@ -45,6 +52,7 @@ PRECOS = {
     "Fuzil (Rifle)": 1000,
     "C4": 5000
 }
+
 
 def enviar_webhook(url, conteudo=None, embed=None):
     """Envia mensagem para o webhook; se embed for passado, manda como box."""
@@ -58,6 +66,7 @@ def enviar_webhook(url, conteudo=None, embed=None):
     except Exception:
         # Em produção, logar o erro
         pass
+
 
 def contato_valido(contato: str) -> bool:
     # Formato: 3 dígitos, hífen, 3 dígitos (ex: 123-456)
@@ -139,7 +148,6 @@ INDEX_HTML = """
         .precos li { margin: 4px 0; }
         a { color: #f5c542; }
 
-        /* aviso flutuante que some em 10s */
         .popup-aviso {
             position: fixed;
             top: 20px;
@@ -182,7 +190,6 @@ INDEX_HTML = """
         <label>Horário de entrega:</label>
         <input type="text" name="horario_entrega" placeholder="Ex: Após 20:00" required>
 
-        <!-- QUANTIDADES POR ITEM (CARRINHO EM UMA ENCOMENDA SÓ) -->
         <label>Quantidade Pistol:</label>
         <input type="number" name="qtd_pistol" min="0" value="0">
 
@@ -216,7 +223,6 @@ INDEX_HTML = """
     </p>
 
 <script>
-    // preços
     const precos = {
         "Pistol": 600,
         "Sub (SMG)": 800,
@@ -224,7 +230,6 @@ INDEX_HTML = """
         "C4": 5000
     };
 
-    // inputs de quantidade
     const qPistol = document.querySelector('input[name="qtd_pistol"]');
     const qSub    = document.querySelector('input[name="qtd_sub"]');
     const qFuzil  = document.querySelector('input[name="qtd_fuzil"]');
@@ -232,7 +237,6 @@ INDEX_HTML = """
     const inputTotal = document.getElementById('total');
 
     function formatarNumero(valor) {
-        // separador de milhar com vírgula (1,000 / 5,000)
         return valor.toLocaleString('en-US');
     }
 
@@ -260,11 +264,10 @@ INDEX_HTML = """
     });
     atualizarTotal();
 
-    // máscara simples 000-000 para contato
     const inputContato = document.getElementById('contato');
     if (inputContato) {
         inputContato.addEventListener('input', function () {
-            let v = this.value.replace(/[^0-9]/g, ''); // só dígitos
+            let v = this.value.replace(/[^0-9]/g, '');
             if (v.length > 6) {
                 v = v.slice(0, 6);
             }
@@ -276,13 +279,12 @@ INDEX_HTML = """
         });
     }
 
-    // esconder aviso em 10 segundos
     window.addEventListener('load', function () {
         const popup = document.getElementById('popup-aviso');
         if (popup) {
             setTimeout(function () {
                 popup.style.display = 'none';
-            }, 10000); // 10000 ms = 10s
+            }, 10000);
         }
     });
 </script>
@@ -388,7 +390,6 @@ def index():
         contato = request.form.get("contato", "").strip()
         horario_entrega = request.form.get("horario_entrega", "").strip()
 
-        # quantidades por produto
         try:
             qtd_pistol = int(request.form.get("qtd_pistol", 0) or 0)
             qtd_sub    = int(request.form.get("qtd_sub", 0) or 0)
@@ -411,7 +412,6 @@ def index():
             for e in erros:
                 flash(e, "erro")
         else:
-            # totais por item
             total_pistol = qtd_pistol * PRECOS["Pistol"]
             total_sub    = qtd_sub    * PRECOS["Sub (SMG)"]
             total_fuzil  = qtd_fuzil  * PRECOS["Fuzil (Rifle)"]
@@ -420,7 +420,6 @@ def index():
             valor_total = total_pistol + total_sub + total_fuzil + total_c4
             quantidade_total = qtd_pistol + qtd_sub + qtd_fuzil + qtd_c4
 
-            # descrição em lista vertical (uma linha por item + total geral)
             linhas = []
             if qtd_pistol:
                 linhas.append(f"Pistol x{qtd_pistol} — D$ {total_pistol}")
@@ -445,19 +444,17 @@ def index():
                 nome,
                 contato,
                 horario_entrega,
-                descricao_produtos,      # resumo de todos os itens (em lista vertical)
-                quantidade_total,        # soma de unidades
-                valor_total,             # soma de valores
+                descricao_produtos,
+                quantidade_total,
+                valor_total,
                 criado_em
             ))
             conn.commit()
             pedido_id = cur.lastrowid
             conn.close()
 
-            # guardar contato na sessão para acompanhar pedidos depois
             session["contato"] = contato
 
-            # Embed para Aba Encomendas (itens em lista vertical)
             embed = {
                 "title": f"📦 Nova encomenda #{pedido_id}",
                 "color": 0xF5C542,
@@ -479,6 +476,7 @@ def index():
 
     return render_template_string(INDEX_HTML, precos=PRECOS, mensagem_notificacao=mensagem_notificacao)
 
+
 @app.route("/meus_pedidos")
 def meus_pedidos():
     contato_atual = session.get("contato")
@@ -492,6 +490,7 @@ def meus_pedidos():
         conn.close()
 
     return render_template_string(MEUS_PEDIDOS_HTML, orders=orders, contato_atual=contato_atual)
+
 
 @app.route("/atualizar_status/<int:pedido_id>", methods=["POST"])
 def atualizar_status(pedido_id):
@@ -508,7 +507,6 @@ def atualizar_status(pedido_id):
     conn = get_db()
     cur = conn.cursor()
 
-    # garantir que o pedido pertence ao contato da sessão
     cur.execute("SELECT * FROM orders WHERE id = ? AND contato = ?", (pedido_id, contato_atual))
     pedido = cur.fetchone()
 
@@ -541,8 +539,7 @@ def atualizar_status(pedido_id):
     conn.close()
     return redirect(url_for("meus_pedidos"))
 
+
 if __name__ == "__main__":
-    with app.app_context():
-        init_db()
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=False)
